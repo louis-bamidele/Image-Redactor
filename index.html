@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Redactor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: white;
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 60rem;
+            text-align: center;
+            position: relative;
+        }
+        canvas {
+            border: 2px dashed #d1d5db;
+            cursor: crosshair;
+            max-width: 100%;
+            height: auto;
+            margin-top: 1.5rem;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1 class="text-3xl font-bold mb-2">Image Redactor</h1>
+    <p class="text-gray-600 mb-6">Upload an image and click and drag to sensor out sensitive information.</p>
+    
+    <div id="controls" class="flex flex-col sm:flex-row justify-center items-center gap-4">
+        <label for="fileInput" class="cursor-pointer bg-blue-600 text-white font-medium py-3 px-6 rounded-full shadow-lg hover:bg-blue-700 transition duration-300">
+            Upload Image
+        </label>
+        <input type="file" id="fileInput" accept="image/*" class="hidden">
+
+        <button id="downloadBtn" class="bg-green-600 text-white font-medium py-3 px-6 rounded-full shadow-lg hover:bg-green-700 transition duration-300" style="display: none;">
+            Download Redacted Image
+        </button>
+    </div>
+
+    <div id="image-container" class="relative mt-6" style="display: none;">
+        <canvas id="redactorCanvas"></canvas>
+    </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const redactorCanvas = document.getElementById('redactorCanvas');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const imageContainer = document.getElementById('image-container');
+    const ctx = redactorCanvas.getContext('2d');
+    
+    let isDrawing = false;
+    let startX, startY;
+    let img = new Image();
+    let redactions = []; // Array to store all completed redactions
+    
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                img.onload = () => {
+                    // Reset redactions and set canvas dimensions to match the image
+                    redactions = [];
+                    redactorCanvas.width = img.width;
+                    redactorCanvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    imageContainer.style.display = 'block';
+                    downloadBtn.style.display = 'block';
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    redactorCanvas.addEventListener('mousedown', (e) => {
+        isDrawing = true;
+        const rect = redactorCanvas.getBoundingClientRect();
+        const scaleX = redactorCanvas.width / rect.width;
+        const scaleY = redactorCanvas.height / rect.height;
+        startX = (e.clientX - rect.left) * scaleX;
+        startY = (e.clientY - rect.top) * scaleY;
+    });
+
+    redactorCanvas.addEventListener('mousemove', (e) => {
+        if (!isDrawing) return;
+        
+        const rect = redactorCanvas.getBoundingClientRect();
+        const scaleX = redactorCanvas.width / rect.width;
+        const scaleY = redactorCanvas.height / rect.height;
+        const currentX = (e.clientX - rect.left) * scaleX;
+        const currentY = (e.clientY - rect.top) * scaleY;
+
+        // Clear the canvas and redraw the original image
+        ctx.clearRect(0, 0, redactorCanvas.width, redactorCanvas.height);
+        ctx.drawImage(img, 0, 0);
+
+        // Draw all saved redactions
+        ctx.fillStyle = 'black';
+        redactions.forEach(redaction => {
+            ctx.fillRect(redaction.x, redaction.y, redaction.width, redaction.height);
+        });
+        
+        const width = currentX - startX;
+        const height = currentY - startY;
+        
+        // Draw the current in-progress rectangle
+        ctx.fillRect(startX, startY, width, height);
+    });
+
+    redactorCanvas.addEventListener('mouseup', (e) => {
+        if (isDrawing) {
+            isDrawing = false;
+            const rect = redactorCanvas.getBoundingClientRect();
+            const scaleX = redactorCanvas.width / rect.width;
+            const scaleY = redactorCanvas.height / rect.height;
+            const endX = (e.clientX - rect.left) * scaleX;
+            const endY = (e.clientY - rect.top) * scaleY;
+
+            // Save the completed redaction
+            const width = endX - startX;
+            const height = endY - startY;
+            if (width !== 0 && height !== 0) { // Only save if a drag occurred
+                 redactions.push({ x: startX, y: startY, width, height });
+            }
+        }
+    });
+    
+    // For touch devices
+    redactorCanvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        isDrawing = true;
+        const rect = redactorCanvas.getBoundingClientRect();
+        const scaleX = redactorCanvas.width / rect.width;
+        const scaleY = redactorCanvas.height / rect.height;
+        startX = (touch.clientX - rect.left) * scaleX;
+        startY = (touch.clientY - rect.top) * scaleY;
+    });
+
+    redactorCanvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const touch = e.touches[0];
+        const rect = redactorCanvas.getBoundingClientRect();
+        const scaleX = redactorCanvas.width / rect.width;
+        const scaleY = redactorCanvas.height / rect.height;
+        const currentX = (touch.clientX - rect.left) * scaleX;
+        const currentY = (touch.clientY - rect.top) * scaleY;
+        
+        ctx.clearRect(0, 0, redactorCanvas.width, redactorCanvas.height);
+        ctx.drawImage(img, 0, 0);
+        
+        ctx.fillStyle = 'black';
+        redactions.forEach(redaction => {
+            ctx.fillRect(redaction.x, redaction.y, redaction.width, redaction.height);
+        });
+
+        const width = currentX - startX;
+        const height = currentY - startY;
+        
+        ctx.fillRect(startX, startY, width, height);
+    });
+
+    redactorCanvas.addEventListener('touchend', (e) => {
+        if (isDrawing) {
+            isDrawing = false;
+            const rect = redactorCanvas.getBoundingClientRect();
+            const scaleX = redactorCanvas.width / rect.width;
+            const scaleY = redactorCanvas.height / rect.height;
+            const touch = e.changedTouches[0];
+            const endX = (touch.clientX - rect.left) * scaleX;
+            const endY = (touch.clientY - rect.top) * scaleY;
+            
+            const width = endX - startX;
+            const height = endY - startY;
+            if (width !== 0 && height !== 0) {
+                 redactions.push({ x: startX, y: startY, width, height });
+            }
+        }
+    });
+    
+    downloadBtn.addEventListener('click', () => {
+        const link = document.createElement('a');
+        link.download = 'redacted_image.png';
+        link.href = redactorCanvas.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+</script>
+
+</body>
+</html>
